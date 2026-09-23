@@ -11,6 +11,9 @@ function csvCell(value: unknown): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+const submittedMs = (r: { submittedAt: unknown } | null) =>
+  r ? new Date(r.submittedAt as string).getTime() : Infinity;
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isAdmin())) return error('Unauthorized', 401);
   const id = parseId((await params).id);
@@ -20,7 +23,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const rows = (await getParticipantStats(c.id)).sort(
     (a, b) =>
       (b.result?.wpm ?? -1) - (a.result?.wpm ?? -1) ||
-      (b.result?.accuracy ?? -1) - (a.result?.accuracy ?? -1),
+      (b.result?.accuracy ?? -1) - (a.result?.accuracy ?? -1) ||
+      submittedMs(a.result) - submittedMs(b.result),
   );
   const header = ['rank', 'username', 'wpm', 'raw_wpm', 'accuracy_pct', 'errors', 'correct_chars',
     'typed_chars', 'elapsed_sec', 'submission', 'submitted_at'];

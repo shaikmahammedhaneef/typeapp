@@ -13,7 +13,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <header className="topbar">
           <Link href="/" className="brand">
-            Type<span>Race</span> Arena
+            <span className="logo">⌨</span>
+            <span style={{ color: 'var(--text)' }}>
+              Type<span>Race</span> Arena
+            </span>
           </Link>
         </header>
         {children}

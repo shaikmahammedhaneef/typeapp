@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api, ApiError, formatSeconds, useServerClock, useTick } from '@/components/client';
 import { scoreTyping } from '@/lib/scoring';
+import Avatar from '@/components/Avatar';
+import Podium from '@/components/Podium';
 
 interface Competition {
   id: number;
@@ -174,12 +176,16 @@ export default function PlayPage() {
       <main className="container narrow">
         <div className="hero">
           <h1>{c.title}</h1>
-          <p className="muted">
-            You are in as <strong style={{ color: 'var(--text)' }}>{state.me.username}</strong>
-          </p>
+          <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+            <Avatar name={state.me.username} size={36} />
+            <span className="muted">
+              You are in as <strong style={{ color: 'var(--text)' }}>{state.me.username}</strong>
+            </span>
+          </div>
         </div>
         <div className="card stack" style={{ textAlign: 'center' }}>
-          <div>
+          <div style={{ fontSize: 44 }}>🚦</div>
+          <div style={{ fontWeight: 600 }}>
             <span className="pulse" />
             Waiting for the admin to start the competition…
           </div>
@@ -196,48 +202,79 @@ export default function PlayPage() {
 
   // Results
   if (result || (c.status === 'finished' && !racing)) {
+    const board = state.leaderboard;
+    const myRank = board?.find((r) => r.username === state.me.username)?.rank;
     return (
-      <main className="container" style={{ maxWidth: 900 }}>
-        <h1>{c.title}</h1>
-        <p className="muted">Results for {state.me.username}</p>
+      <main className="container" style={{ maxWidth: 960 }}>
+        <div className="row between" style={{ marginBottom: 18 }}>
+          <div className="row">
+            <Avatar name={state.me.username} size={44} />
+            <div>
+              <h1 style={{ margin: 0 }}>{c.title}</h1>
+              <div className="muted">
+                {myRank
+                  ? `You finished #${myRank} of ${board!.length}${myRank <= 3 ? ' 🎉' : ''}`
+                  : `Nice work, ${state.me.username}!`}
+              </div>
+            </div>
+          </div>
+        </div>
         {result ? (
-          <div className="stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)', margin: '20px 0' }}>
-            <Stat label="WPM" value={result.wpm} />
-            <Stat label="Accuracy" value={`${result.accuracy}%`} />
-            <Stat label="Errors" value={result.errors} />
-            <Stat label="Time" value={formatSeconds(result.elapsedSec)} />
+          <div className="stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 20 }}>
+            <Stat label="⚡ Your WPM" value={result.wpm} />
+            <Stat label="🎯 Accuracy" value={`${result.accuracy}%`} />
+            <Stat label="❌ Errors" value={result.errors} />
+            <Stat label="⏱️ Time" value={formatSeconds(result.elapsedSec)} />
           </div>
         ) : (
-          <div className="alert info" style={{ margin: '20px 0' }}>
+          <div className="alert info" style={{ marginBottom: 20 }}>
             No result was recorded for you in this competition.
           </div>
         )}
-        <div className="card">
-          <h2>Leaderboard</h2>
-          {state.leaderboard ? (
-            <table>
-              <thead>
-                <tr><th>#</th><th>Player</th><th className="num">WPM</th><th className="num">Accuracy</th><th className="num">Errors</th></tr>
-              </thead>
-              <tbody>
-                {state.leaderboard.map((r) => (
-                  <tr key={r.username} className={r.username === state.me.username ? 'me-row' : ''}>
-                    <td>{r.rank}</td>
-                    <td>{r.username}</td>
-                    <td className="num">{r.wpm}</td>
-                    <td className="num">{r.accuracy}%</td>
-                    <td className="num">{r.errors}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
+        {board ? (
+          <>
+            {board.length > 0 && (
+              <Podium
+                title="Winners"
+                top={board.slice(0, 3).map((r) => ({ username: r.username, wpm: r.wpm, accuracy: r.accuracy }))}
+                highlight={state.me.username}
+              />
+            )}
+            <div className="card">
+              <h2>📋 Leaderboard</h2>
+              <table>
+                <thead>
+                  <tr><th style={{ width: 60 }}>Rank</th><th>Player</th><th className="num">WPM</th><th className="num">Accuracy</th><th className="num">Errors</th></tr>
+                </thead>
+                <tbody>
+                  {board.map((r) => (
+                    <tr key={r.username} className={r.username === state.me.username ? 'me-row' : ''}>
+                      <td className="medal-rank">{['🥇', '🥈', '🥉'][r.rank - 1] ?? <span className="muted" style={{ fontSize: 15, fontWeight: 700 }}>{r.rank}</span>}</td>
+                      <td>
+                        <div className="row" style={{ gap: 10 }}>
+                          <Avatar name={r.username} size={28} />
+                          <strong>{r.username}</strong>
+                          {r.username === state.me.username && <span className="badge open">you</span>}
+                        </div>
+                      </td>
+                      <td className="num" style={{ fontWeight: 800 }}>{r.wpm}</td>
+                      <td className="num">{r.accuracy}%</td>
+                      <td className="num">{r.errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="card empty-state">
+            <div className="big-emoji">⏳</div>
             <p className="muted">
               <span className="pulse" />
-              Waiting for the race to finish…
+              Waiting for everyone to finish… the winners will appear here.
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -263,13 +300,13 @@ export default function PlayPage() {
       ) : (
         <div className="hud">
           <div className={`stat timer ${remaining <= 10 ? 'low' : ''}`}>
-            <div className="label">Time left</div>
+            <div className="label">⏱️ Time left</div>
             <div className="value">{formatSeconds(remaining)}</div>
           </div>
-          <Stat label="WPM" value={live.wpm} />
-          <Stat label="Accuracy" value={`${live.accuracy}%`} />
-          <Stat label="Errors" value={live.errors} />
-          <Stat label="Progress" value={`${Math.round(live.progressPct)}%`} />
+          <Stat label="⚡ WPM" value={live.wpm} />
+          <Stat label="🎯 Accuracy" value={`${live.accuracy}%`} />
+          <Stat label="❌ Errors" value={live.errors} />
+          <Stat label="🏁 Progress" value={`${Math.round(live.progressPct)}%`} />
         </div>
       )}
 

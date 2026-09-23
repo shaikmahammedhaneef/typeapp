@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import AdminNav from '@/components/AdminNav';
+import Avatar from '@/components/Avatar';
+import Podium from '@/components/Podium';
 import Sparkline from '@/components/Sparkline';
 import { api, formatSeconds, useServerClock, useTick } from '@/components/client';
 
@@ -111,12 +113,20 @@ export default function StatsPage() {
       else state = { label: 'Disconnected', cls: 'offline' };
       return { ...p, wpm, accuracy, errors, progress, state };
     })
-    .sort((a, b) => b.wpm - a.wpm || (b.accuracy ?? 0) - (a.accuracy ?? 0));
+    // Same ordering as the players' leaderboard: WPM, then accuracy, then earliest submission.
+    .sort(
+      (a, b) =>
+        b.wpm - a.wpm ||
+        (b.accuracy ?? 0) - (a.accuracy ?? 0) ||
+        submittedMs(a.result) - submittedMs(b.result),
+    );
 
   const scored = rows.filter((r) => r.result || r.live);
   const avg = (xs: number[]) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : 0);
   const remaining = c.endsAt ? (new Date(c.endsAt).getTime() - now) / 1000 : c.durationSec;
   const beforeStart = c.startedAt ? now < new Date(c.startedAt).getTime() : false;
+  const submitted = rows.filter((r) => r.result).length;
+  const ranked = rows.filter((r) => r.result);
 
   return (
     <main className="container">
@@ -126,79 +136,163 @@ export default function StatsPage() {
           <h1 style={{ margin: 0 }}>{c.title}</h1>
           <span className={`badge ${c.status}`}>{c.status}</span>
           {running && (
-            <span className="muted">
+            <span className="muted" style={{ fontWeight: 600 }}>
               <span className="pulse" />
-              {beforeStart ? 'Starting…' : 'Live'}
+              {beforeStart ? `Starting in ${Math.ceil((new Date(c.startedAt!).getTime() - now) / 1000)}…` : 'Live'}
             </span>
           )}
         </div>
         <div className="row">
-          <Link className="btn secondary" href={`/admin/competitions/${id}`}>Manage</Link>
-          <a className="btn secondary" href={`/api/admin/competitions/${id}/export`}>Export CSV</a>
+          <Link className="btn secondary" href={`/admin/competitions/${id}`}>⚙️ Manage</Link>
+          <a className="btn secondary" href={`/api/admin/competitions/${id}/export`}>⬇️ Export CSV</a>
         </div>
       </div>
       {error && <div className="alert error" style={{ marginBottom: 16 }}>{error}</div>}
 
       <div className="stats" style={{ marginBottom: 20, gridTemplateColumns: 'repeat(6, 1fr)' }}>
-        <Stat label={running ? 'Time left' : 'Duration'} value={running ? formatSeconds(remaining) : `${c.durationSec}s`} />
-        <Stat label="Players" value={rows.length} />
-        <Stat label="Submitted" value={`${rows.filter((r) => r.result).length}/${rows.length}`} />
-        <Stat label={finished ? 'Top WPM' : 'Top WPM (live)'} value={scored.length ? Math.max(...scored.map((r) => r.wpm)) : '—'} />
-        <Stat label="Avg WPM" value={scored.length ? avg(scored.map((r) => r.wpm)) : '—'} />
-        <Stat label="Avg accuracy" value={scored.length ? `${avg(scored.map((r) => r.accuracy ?? 0))}%` : '—'} />
+        <Stat
+          icon="⏱️"
+          label={running ? 'Time left' : 'Duration'}
+          value={running ? formatSeconds(beforeStart ? c.durationSec : remaining) : `${c.durationSec}s`}
+          danger={running && !beforeStart && remaining <= 10}
+        />
+        <Stat icon="👥" label="Players" value={rows.length} />
+        <Stat icon="✅" label="Submitted" value={`${submitted}/${rows.length}`} />
+        <Stat icon="⚡" label="Top WPM" value={scored.length ? Math.max(...scored.map((r) => r.wpm)) : '—'} />
+        <Stat icon="📈" label="Avg WPM" value={scored.length ? avg(scored.map((r) => r.wpm)) : '—'} />
+        <Stat icon="🎯" label="Avg accuracy" value={scored.length ? `${avg(scored.map((r) => r.accuracy ?? 0))}%` : '—'} />
       </div>
 
-      <div className="card">
-        <h2>{finished ? 'Final leaderboard' : running ? 'Live leaderboard' : 'Players'}</h2>
-        {rows.length === 0 ? (
-          <p className="muted">No players have joined this competition.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Player</th>
-                <th>Status</th>
-                <th className="num">WPM</th>
-                <th className="num">Accuracy</th>
-                <th className="num">Errors</th>
-                <th>Progress</th>
-                <th>WPM over time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.username}>
-                  <td>{r.result || r.live ? i + 1 : '—'}</td>
-                  <td style={{ fontWeight: 600 }}>{r.username}</td>
-                  <td><span className={`badge ${r.state.cls}`}>{r.state.label}</span></td>
-                  <td className="num" style={{ fontSize: 18, fontWeight: 700 }}>{r.result || r.live ? r.wpm : '—'}</td>
-                  <td className="num">{r.accuracy !== null ? `${r.accuracy}%` : '—'}</td>
-                  <td className="num">{r.errors ?? '—'}</td>
-                  <td>
-                    <div className="row" style={{ gap: 8 }}>
-                      <div className="progress" style={{ flex: 1 }}>
-                        <div style={{ width: `${Math.min(100, r.progress)}%` }} />
-                      </div>
-                      <span className="muted" style={{ fontSize: 12, width: 38 }}>{Math.round(r.progress)}%</span>
-                    </div>
-                  </td>
-                  <td><Sparkline points={r.live?.history ?? []} /></td>
+      {finished ? (
+        <>
+          {ranked.length > 0 ? (
+            <Podium
+              title="Winners"
+              subtitle={`${ranked.length} player${ranked.length === 1 ? '' : 's'} finished · ${c.durationSec}s race`}
+              top={ranked.slice(0, 3).map((r) => ({ username: r.username, wpm: r.wpm, accuracy: r.accuracy }))}
+            />
+          ) : (
+            <div className="card empty-state">
+              <div className="big-emoji">🤷</div>
+              <p className="muted">Nobody typed anything in this competition.</p>
+            </div>
+          )}
+          <div className="card">
+            <h2>📋 Full results</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 60 }}>Rank</th>
+                  <th>Player</th>
+                  <th className="num">WPM</th>
+                  <th className="num">Accuracy</th>
+                  <th className="num">Errors</th>
+                  <th>Progress</th>
+                  <th>Submission</th>
+                  <th>Speed over time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.username}>
+                    <td className="medal-rank">{r.result ? MEDALS[i] ?? <span className="muted" style={{ fontSize: 15, fontWeight: 700 }}>{i + 1}</span> : '—'}</td>
+                    <td>
+                      <div className="row" style={{ gap: 10 }}>
+                        <Avatar name={r.username} size={30} />
+                        <strong>{r.username}</strong>
+                      </div>
+                    </td>
+                    <td className="num" style={{ fontSize: 17, fontWeight: 800 }}>{r.result ? r.wpm : '—'}</td>
+                    <td className="num">{r.accuracy !== null ? `${r.accuracy}%` : '—'}</td>
+                    <td className="num">{r.errors ?? '—'}</td>
+                    <td>
+                      <div className="row" style={{ gap: 8 }}>
+                        <div className="progress" style={{ flex: 1 }}>
+                          <div style={{ width: `${Math.min(100, r.progress)}%` }} />
+                        </div>
+                        <span className="muted" style={{ fontSize: 12, width: 38 }}>{Math.round(r.progress)}%</span>
+                      </div>
+                    </td>
+                    <td><span className={`badge ${r.state.cls}`}>{r.state.label}</span></td>
+                    <td><Sparkline points={r.live?.history ?? []} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <div className="card">
+          <div className="row between" style={{ marginBottom: 16 }}>
+            <h2 style={{ margin: 0 }}>{running ? '🏁 Live race' : '🚦 Starting line'}</h2>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {running ? 'Ranked by current speed · updates every 1.5s' : 'Waiting for the admin to start the race'}
+            </span>
+          </div>
+          {rows.length === 0 ? (
+            <div className="empty-state">
+              <div className="big-emoji">👀</div>
+              <p className="muted">
+                No players yet.{' '}
+                {c.status === 'draft' ? 'Open the competition so people can join.' : 'Share the home page link so people can join.'}
+              </p>
+            </div>
+          ) : (
+            <div className="lanes">
+              {rows.map((r, i) => {
+                const hasData = !!(r.result || r.live);
+                const leader = running && hasData && i === 0 && r.wpm > 0;
+                const runner = r.result ? '🏁' : r.state.cls === 'offline' ? '💤' : '🏃';
+                return (
+                  <div key={r.username} className={`lane ${leader ? 'leader' : ''}`}>
+                    <div className="rank">{leader ? '👑' : hasData ? i + 1 : '·'}</div>
+                    <div className="who">
+                      <Avatar name={r.username} size={38} />
+                      <div style={{ minWidth: 0 }}>
+                        <div className="name" title={r.username}>{r.username}</div>
+                        <div className="sub"><span className={`badge ${r.state.cls}`}>{r.state.label}</span></div>
+                      </div>
+                    </div>
+                    <div className="track">
+                      <div className="fill" style={{ width: `${Math.min(100, r.progress)}%` }} />
+                      <span className="pct">{Math.round(r.progress)}%</span>
+                      <span className="flag">🏁</span>
+                      <span
+                        className={`runner ${r.state.cls === 'typing' ? 'moving' : ''}`}
+                        style={{ left: `calc(16px + (100% - 64px) * ${Math.min(100, r.progress) / 100})` }}
+                      >
+                        {runner}
+                      </span>
+                    </div>
+                    <div className="speed">
+                      <div>
+                        <span className="wpm">{hasData ? r.wpm : '—'}</span>
+                        <span className="unit">WPM</span>
+                      </div>
+                      <div className="acc">
+                        {r.accuracy !== null ? `🎯 ${r.accuracy}%` : ''} {r.errors ? `· ${r.errors} err` : ''}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </main>
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+const submittedMs = (r: Participant['result']) => (r ? new Date(r.submittedAt).getTime() : Infinity);
+
+function Stat({ icon, label, value, danger }: { icon: string; label: string; value: React.ReactNode; danger?: boolean }) {
   return (
     <div className="stat">
-      <div className="label">{label}</div>
-      <div className="value">{value}</div>
+      <div className="label"><span className="icon">{icon}</span>{label}</div>
+      <div className="value" style={danger ? { color: 'var(--bad)' } : undefined}>{value}</div>
     </div>
   );
 }

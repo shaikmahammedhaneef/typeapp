@@ -52,6 +52,7 @@ export default function HomePage() {
   return (
     <main className="container narrow">
       <div className="hero">
+        <div style={{ fontSize: 52, marginBottom: 8 }}>⌨️🏁</div>
         <h1>Ready to race?</h1>
         <p className="muted">Pick a username, join the competition and wait for the start.</p>
       </div>
