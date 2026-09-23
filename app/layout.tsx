@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Footer from '@/components/Footer';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,7 +20,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </span>
           </Link>
         </header>
-        {children}
+        <div className="page">{children}</div>
+        <Footer />
       </body>
     </html>
   );
